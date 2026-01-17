@@ -135,7 +135,7 @@ router.patch('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     const completedAt =
       data.status === 'DONE'
         ? new Date()
-        : data.status && data.status !== 'DONE'
+        : data.status !== undefined
           ? null
           : undefined
 
