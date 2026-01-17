@@ -67,7 +67,7 @@ export default function TaskDetailModal({
       description: formData.description || undefined,
       status: formData.status,
       priority: formData.priority,
-      assigneeId: formData.assigneeId || null,
+      assigneeId: formData.assigneeId || undefined,
       projectId: formData.projectId,
       estimatedHours: formData.estimatedHours ? Number(formData.estimatedHours) : undefined,
       actualHours: formData.actualHours ? Number(formData.actualHours) : undefined,

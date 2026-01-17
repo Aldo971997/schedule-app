@@ -347,7 +347,7 @@ export default function WorkersPage() {
         <WorkerModal
           availableUsers={availableUsers}
           onClose={() => setShowModal(false)}
-          onSubmit={(data) => createMutation.mutate(data)}
+          onSubmit={(data) => createMutation.mutate(data as CreateWorkerInput)}
           isLoading={createMutation.isPending}
         />
       )}

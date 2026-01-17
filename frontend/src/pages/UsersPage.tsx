@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi } from '../services/api'
-import type { User, UserRole, CreateUserInput } from '../types'
+import type { UserRole, CreateUserInput } from '../types'
 
 const roleColors: Record<UserRole, string> = {
   ADMIN: 'bg-red-100 text-red-700',

@@ -21,7 +21,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { schedulingApi, workersApi } from '../services/api'
-import type { Worker, ScheduleEntry } from '../types'
+import type { ScheduleEntry } from '../types'
 import 'leaflet/dist/leaflet.css'
 
 // Fix for default marker icons in Leaflet with Vite
@@ -186,7 +186,7 @@ export default function RoutePlannerPage() {
               )}
 
               {/* Markers */}
-              {locationsWithCoords.map((item, index) => (
+              {locationsWithCoords.map((item) => (
                 <Marker
                   key={item.entry.id}
                   position={item.position}

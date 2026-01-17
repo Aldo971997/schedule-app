@@ -10,7 +10,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { setAuth } = useAuthStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const { theme, toggle: toggleTheme } = useThemeStore()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
