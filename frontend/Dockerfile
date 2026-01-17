@@ -15,8 +15,8 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build the application with the API URL baked in
-RUN echo "Building with VITE_API_URL=$VITE_API_URL" && npm run build
+# Build the application
+RUN npm run build && ls -la dist/
 
 # Production stage with nginx
 FROM nginx:alpine AS production
@@ -27,11 +27,10 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# Verify files were copied
+RUN ls -la /usr/share/nginx/html/
+
 # Expose port
 EXPOSE 80
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:80 || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
