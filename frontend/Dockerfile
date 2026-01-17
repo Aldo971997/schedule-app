@@ -10,7 +10,7 @@ ENV VITE_API_URL=https://backend-production-ad17.up.railway.app/api
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
