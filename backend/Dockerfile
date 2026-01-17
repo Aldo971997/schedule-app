@@ -30,9 +30,9 @@ RUN apk add --no-cache openssl
 
 WORKDIR /app
 
-# Copy package files and install production dependencies only
+# Copy package files and install dependencies (including tsx for seeding)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy prisma schema and generate client
 COPY prisma ./prisma/
@@ -47,5 +47,5 @@ ENV PORT=3000
 # Expose port
 EXPOSE 3000
 
-# Start command - sync database and start server
-CMD npx prisma db push --skip-generate && node dist/index.js
+# Start command - sync database, seed data, and start server
+CMD npx prisma db push --skip-generate && npx tsx prisma/seed.ts && node dist/index.js
