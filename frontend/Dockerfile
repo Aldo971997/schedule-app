@@ -3,8 +3,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Build argument for API URL
-ARG VITE_API_URL=http://localhost:3000
+# Set API URL for production
+ENV VITE_API_URL=https://backend-production-ad17.up.railway.app/api
 
 # Copy package files
 COPY package*.json ./
@@ -15,8 +15,8 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build the application with the API URL baked in
+RUN echo "Building with VITE_API_URL=$VITE_API_URL" && npm run build
 
 # Production stage with nginx
 FROM nginx:alpine AS production
