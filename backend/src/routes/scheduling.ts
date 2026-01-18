@@ -2,6 +2,8 @@ import { Router, Response } from 'express'
 import { PrismaClient } from '@prisma/client'
 import { z } from 'zod'
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth.js'
+import { checkScheduleConflicts, checkBulkScheduleConflicts } from '../services/conflictDetection.js'
+import { emitScheduleUpdate } from '../services/socket.js'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -219,6 +221,39 @@ router.get('/route/:workerId/:date', authenticate, async (req: AuthRequest, res:
   }
 })
 
+// Check conflicts before creating/updating entry
+const checkConflictsSchema = z.object({
+  workerId: z.string().uuid(),
+  date: z.string(),
+  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  endTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  excludeEntryId: z.string().uuid().optional(),
+})
+
+router.post(
+  '/check-conflicts',
+  authenticate,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const data = checkConflictsSchema.parse(req.body)
+      const result = await checkScheduleConflicts(
+        data.workerId,
+        data.date,
+        data.startTime,
+        data.endTime,
+        data.excludeEntryId
+      )
+      res.json(result)
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors })
+      }
+      console.error('Error checking conflicts:', error)
+      res.status(500).json({ error: 'Errore nel controllo dei conflitti' })
+    }
+  }
+)
+
 // Create schedule entry
 router.post(
   '/',
@@ -228,40 +263,22 @@ router.post(
     try {
       const data = createScheduleEntrySchema.parse(req.body)
 
-      // Check for time conflicts
-      const dateObj = new Date(data.date)
-      const startOfDay = new Date(dateObj)
-      startOfDay.setHours(0, 0, 0, 0)
-      const endOfDay = new Date(dateObj)
-      endOfDay.setHours(23, 59, 59, 999)
+      // Check for conflicts using the service
+      const conflictResult = await checkScheduleConflicts(
+        data.workerId,
+        data.date,
+        data.startTime,
+        data.endTime
+      )
 
-      const existingEntries = await prisma.scheduleEntry.findMany({
-        where: {
-          workerId: data.workerId,
-          date: {
-            gte: startOfDay,
-            lte: endOfDay,
-          },
-        },
-      })
-
-      // Check for time overlap
-      const newStart = data.startTime
-      const newEnd = data.endTime
-
-      const hasConflict = existingEntries.some((entry) => {
-        const existingStart = entry.startTime
-        const existingEnd = entry.endTime
-        return (
-          (newStart >= existingStart && newStart < existingEnd) ||
-          (newEnd > existingStart && newEnd <= existingEnd) ||
-          (newStart <= existingStart && newEnd >= existingEnd)
-        )
-      })
-
-      if (hasConflict) {
-        return res.status(400).json({ error: 'Conflitto di orario con una programmazione esistente' })
+      if (conflictResult.hasConflict) {
+        return res.status(409).json({
+          error: 'Conflitto di programmazione rilevato',
+          conflicts: conflictResult.conflicts,
+        })
       }
+
+      const dateObj = new Date(data.date)
 
       const entry = await prisma.scheduleEntry.create({
         data: {
@@ -296,6 +313,23 @@ router.post(
         })
       }
 
+      // Emit real-time event
+      emitScheduleUpdate({
+        type: 'created',
+        entry: {
+          id: entry.id,
+          workerId: entry.workerId,
+          date: entry.date.toISOString(),
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          serviceJobId: entry.serviceJobId || undefined,
+          locationId: entry.locationId || undefined,
+        },
+        userId: req.user!.id,
+        userName: req.user!.email,
+        timestamp: new Date().toISOString(),
+      })
+
       res.status(201).json(entry)
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -315,6 +349,17 @@ router.post(
   async (req: AuthRequest, res: Response) => {
     try {
       const entriesData = bulkCreateSchema.parse(req.body)
+
+      // Check for conflicts in all entries
+      const conflictResults = await checkBulkScheduleConflicts(entriesData)
+      const errors = conflictResults.filter(r => r.result.hasConflict)
+
+      if (errors.length > 0) {
+        return res.status(409).json({
+          error: 'Conflitti rilevati nelle programmazioni',
+          conflicts: errors,
+        })
+      }
 
       const entries = await prisma.$transaction(
         entriesData.map((data) =>
@@ -347,6 +392,30 @@ router.patch(
     try {
       const data = updateScheduleEntrySchema.parse(req.body)
 
+      // If time or date is being updated, check for conflicts
+      if (data.workerId || data.date || data.startTime || data.endTime) {
+        const existingEntry = await prisma.scheduleEntry.findUnique({
+          where: { id: req.params.id },
+        })
+
+        if (existingEntry) {
+          const conflictResult = await checkScheduleConflicts(
+            data.workerId || existingEntry.workerId,
+            data.date || existingEntry.date.toISOString().split('T')[0],
+            data.startTime || existingEntry.startTime,
+            data.endTime || existingEntry.endTime,
+            req.params.id // Exclude current entry from conflict check
+          )
+
+          if (conflictResult.hasConflict) {
+            return res.status(409).json({
+              error: 'Conflitto di programmazione rilevato',
+              conflicts: conflictResult.conflicts,
+            })
+          }
+        }
+      }
+
       const entry = await prisma.scheduleEntry.update({
         where: { id: req.params.id },
         data: {
@@ -368,6 +437,23 @@ router.patch(
           serviceJob: true,
           location: true,
         },
+      })
+
+      // Emit real-time event
+      emitScheduleUpdate({
+        type: 'updated',
+        entry: {
+          id: entry.id,
+          workerId: entry.workerId,
+          date: entry.date.toISOString(),
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          serviceJobId: entry.serviceJobId || undefined,
+          locationId: entry.locationId || undefined,
+        },
+        userId: req.user!.id,
+        userName: req.user!.email,
+        timestamp: new Date().toISOString(),
       })
 
       res.json(entry)
@@ -466,6 +552,23 @@ router.delete(
           })
         }
       }
+
+      // Emit real-time event
+      emitScheduleUpdate({
+        type: 'deleted',
+        entry: {
+          id: entry.id,
+          workerId: entry.workerId,
+          date: entry.date.toISOString(),
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          serviceJobId: entry.serviceJobId || undefined,
+          locationId: entry.locationId || undefined,
+        },
+        userId: req.user!.id,
+        userName: req.user!.email,
+        timestamp: new Date().toISOString(),
+      })
 
       res.status(204).send()
     } catch (error) {

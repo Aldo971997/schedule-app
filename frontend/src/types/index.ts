@@ -249,3 +249,36 @@ export interface CreateScheduleEntryInput {
   routeOrder?: number;
   notes?: string;
 }
+
+// Conflict Detection Types
+export type ConflictType = 'TIME_OVERLAP' | 'UNAVAILABLE' | 'MAX_HOURS_EXCEEDED';
+
+export interface ConflictDetail {
+  type: ConflictType;
+  message: string;
+  severity: 'error' | 'warning';
+  details?: {
+    existingEntryId?: string;
+    existingStart?: string;
+    existingEnd?: string;
+    availableStart?: string;
+    availableEnd?: string;
+    currentWeekHours?: number;
+    maxHoursPerWeek?: number;
+    newEntryHours?: number;
+  };
+}
+
+export interface ConflictResult {
+  hasConflict: boolean;
+  hasWarning: boolean;
+  conflicts: ConflictDetail[];
+}
+
+export interface CheckConflictsInput {
+  workerId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  excludeEntryId?: string;
+}

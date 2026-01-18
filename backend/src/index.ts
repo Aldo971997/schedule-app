@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import { createServer } from 'http'
 import authRoutes from './routes/auth.js'
 import userRoutes from './routes/users.js'
 import projectRoutes from './routes/projects.js'
@@ -11,8 +12,10 @@ import workerRoutes from './routes/workers.js'
 import locationRoutes from './routes/locations.js'
 import serviceJobRoutes from './routes/serviceJobs.js'
 import schedulingRoutes from './routes/scheduling.js'
+import { initializeSocket } from './services/socket.js'
 
 const app = express()
+const httpServer = createServer(app)
 const PORT = process.env.PORT || 3000
 
 // CORS configuration
@@ -53,6 +56,9 @@ app.get('/api/health', (_, res) => {
   res.json({ status: 'ok' })
 })
 
-app.listen(PORT, () => {
+// Initialize Socket.IO
+initializeSocket(httpServer)
+
+httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
 })

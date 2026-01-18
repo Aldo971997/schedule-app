@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import { PrismaClient } from '@prisma/client'
 import { z } from 'zod'
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth.js'
+import { checkScheduleConflicts } from '../services/conflictDetection.js'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -279,6 +280,47 @@ router.get(
     } catch (error) {
       console.error('Error fetching available workers:', error)
       res.status(500).json({ error: 'Errore nel recupero degli operatori disponibili' })
+    }
+  }
+)
+
+// Validate schedule for a worker
+const validateScheduleSchema = z.object({
+  date: z.string(),
+  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  endTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  excludeEntryId: z.string().uuid().optional(),
+})
+
+router.post(
+  '/:id/validate-schedule',
+  authenticate,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const workerId = req.params.id
+      const data = validateScheduleSchema.parse(req.body)
+
+      // Check worker exists
+      const worker = await prisma.worker.findUnique({ where: { id: workerId } })
+      if (!worker) {
+        return res.status(404).json({ error: 'Operatore non trovato' })
+      }
+
+      const result = await checkScheduleConflicts(
+        workerId,
+        data.date,
+        data.startTime,
+        data.endTime,
+        data.excludeEntryId
+      )
+
+      res.json(result)
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors })
+      }
+      console.error('Error validating schedule:', error)
+      res.status(500).json({ error: 'Errore nella validazione della programmazione' })
     }
   }
 )

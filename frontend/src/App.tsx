@@ -13,6 +13,7 @@ import WorkersPage from './pages/WorkersPage'
 import ServiceJobsPage from './pages/ServiceJobsPage'
 import ScheduleBuilderPage from './pages/ScheduleBuilderPage'
 import RoutePlannerPage from './pages/RoutePlannerPage'
+import CalendarPage from './pages/CalendarPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuthStore()
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="clients" element={<ClientsPage />} />
         <Route path="my-tasks" element={<MyTasksPage />} />
         <Route path="schedule" element={<ScheduleBuilderPage />} />
+        <Route path="calendar" element={<CalendarPage />} />
         <Route path="workers" element={<WorkersPage />} />
         <Route path="service-jobs" element={<ServiceJobsPage />} />
         <Route path="route-planner" element={<RoutePlannerPage />} />

@@ -22,6 +22,8 @@ import type {
   CreateLocationInput,
   CreateServiceJobInput,
   CreateScheduleEntryInput,
+  ConflictResult,
+  CheckConflictsInput,
 } from '../types'
 
 const api = axios.create({
@@ -228,6 +230,13 @@ export const workersApi = {
     const { data } = await api.get(`/workers/available/${date}`)
     return data
   },
+  validateSchedule: async (
+    id: string,
+    input: { date: string; startTime: string; endTime: string; excludeEntryId?: string }
+  ): Promise<ConflictResult> => {
+    const { data } = await api.post(`/workers/${id}/validate-schedule`, input)
+    return data
+  },
   create: async (input: CreateWorkerInput): Promise<Worker> => {
     const { data } = await api.post('/workers', input)
     return data
@@ -307,6 +316,10 @@ export const schedulingApi = {
   },
   getRoute: async (workerId: string, date: string): Promise<{ worker: Worker; date: string; entries: ScheduleEntry[] }> => {
     const { data } = await api.get(`/scheduling/route/${workerId}/${date}`)
+    return data
+  },
+  checkConflicts: async (input: CheckConflictsInput): Promise<ConflictResult> => {
+    const { data } = await api.post('/scheduling/check-conflicts', input)
     return data
   },
   create: async (input: CreateScheduleEntryInput): Promise<ScheduleEntry> => {

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
@@ -16,7 +16,7 @@ import { format, addDays, startOfWeek, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { schedulingApi, serviceJobsApi, workersApi } from '../services/api'
 import { useAuthStore } from '../store/authStore'
-import type { ServiceJob, Worker, ScheduleEntry, CreateScheduleEntryInput } from '../types'
+import type { ServiceJob, Worker, ScheduleEntry, CreateScheduleEntryInput, ConflictDetail } from '../types'
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 7) // 7:00 - 18:00
 
@@ -554,20 +554,58 @@ function EntryModal({
     endTime: `${(parseInt(startTime.split(':')[0]) + 1).toString().padStart(2, '0')}:00`,
     notes: '',
   })
+  const [conflicts, setConflicts] = useState<ConflictDetail[]>([])
+  const [checkingConflicts, setCheckingConflicts] = useState(false)
+
+  // Check conflicts when form data changes
+  const checkConflicts = useCallback(async () => {
+    if (!formData.workerId || !formData.date || !formData.startTime || !formData.endTime) {
+      setConflicts([])
+      return
+    }
+
+    setCheckingConflicts(true)
+    try {
+      const result = await schedulingApi.checkConflicts({
+        workerId: formData.workerId,
+        date: formData.date,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+      })
+      setConflicts(result.conflicts)
+    } catch (error) {
+      console.error('Error checking conflicts:', error)
+      setConflicts([])
+    } finally {
+      setCheckingConflicts(false)
+    }
+  }, [formData.workerId, formData.date, formData.startTime, formData.endTime])
+
+  useEffect(() => {
+    const timeoutId = setTimeout(checkConflicts, 300) // Debounce
+    return () => clearTimeout(timeoutId)
+  }, [checkConflicts])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    // Allow submission with warnings, block only for errors
+    const hasErrors = conflicts.some(c => c.severity === 'error')
+    if (hasErrors) {
+      return // Block submission on errors
+    }
     onSubmit({
       ...formData,
       serviceJobId: formData.serviceJobId || undefined,
     })
   }
 
-  const worker = workers.find((w) => w.id === workerId)
+  const worker = workers.find((w) => w.id === formData.workerId)
+  const hasErrors = conflicts.some(c => c.severity === 'error')
+  const hasWarnings = conflicts.some(c => c.severity === 'warning')
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md">
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
           Nuova Programmazione
         </h2>
@@ -576,10 +614,59 @@ function EntryModal({
             <strong>Operatore:</strong> {worker?.user?.name}
           </p>
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            <strong>Data:</strong> {format(parseISO(date), 'EEEE d MMMM yyyy', { locale: it })}
+            <strong>Data:</strong> {format(parseISO(formData.date), 'EEEE d MMMM yyyy', { locale: it })}
           </p>
         </div>
+
+        {/* Conflict Warnings */}
+        {conflicts.length > 0 && (
+          <div className={`mb-4 p-3 rounded-lg ${hasErrors ? 'bg-red-50 dark:bg-red-900/30' : 'bg-yellow-50 dark:bg-yellow-900/30'}`}>
+            <h4 className={`text-sm font-semibold mb-2 ${hasErrors ? 'text-red-800 dark:text-red-200' : 'text-yellow-800 dark:text-yellow-200'}`}>
+              {hasErrors ? 'Errori rilevati' : 'Attenzione: Conflitti rilevati'}
+            </h4>
+            <ul className="space-y-1">
+              {conflicts.map((conflict, idx) => (
+                <li
+                  key={idx}
+                  className={`text-sm flex items-start gap-2 ${
+                    conflict.severity === 'error'
+                      ? 'text-red-700 dark:text-red-300'
+                      : 'text-yellow-700 dark:text-yellow-300'
+                  }`}
+                >
+                  <span className="flex-shrink-0">
+                    {conflict.severity === 'error' ? '!' : '!'}
+                  </span>
+                  <span>{conflict.message}</span>
+                </li>
+              ))}
+            </ul>
+            {hasErrors && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                Risolvi gli errori prima di procedere
+              </p>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Operatore
+            </label>
+            <select
+              value={formData.workerId}
+              onChange={(e) => setFormData({ ...formData, workerId: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg"
+              required
+            >
+              {workers.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.user?.name} ({w.employeeCode})
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Lavoro
@@ -645,10 +732,10 @@ function EntryModal({
             </button>
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || hasErrors || checkingConflicts}
               className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
             >
-              {isLoading ? 'Salvataggio...' : 'Crea'}
+              {checkingConflicts ? 'Verificando...' : isLoading ? 'Salvataggio...' : hasWarnings ? 'Crea comunque' : 'Crea'}
             </button>
           </div>
         </form>
